@@ -1,0 +1,922 @@
+// Leads Panel State
+let allLeads = []; // Store all fetched leads
+let filteredLeads = []; // Store filtered results
+let currentLeads = []; // Current page of filtered results
+let selectedLeads = new Set();
+let currentPage = 1;
+let totalPages = 1;
+let totalRecords = 0;
+let isLoading = false;
+let lastFetchTime = 0;
+let retryCount = 0;
+
+// API Configuration
+const CRM_API_URL = '/api/crm/leads';
+const MIN_REQUEST_INTERVAL = 1000;
+const FETCH_SIZE = 100;
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000;
+
+// Initialize leads panel
+function initializeLeadsPanel() {
+    console.log('Initializing CRM Leads Panel with Enhanced Filtering...');
+    
+    // Add event listeners
+    document.getElementById('selectAllCheckbox').addEventListener('change', toggleSelectAll);
+    
+    // Add real-time search listeners
+    document.getElementById('leadTypeFilter').addEventListener('change', applyFilters);
+    document.getElementById('searchTimeInput').addEventListener('input', applyFilters);
+    document.getElementById('searchLeadIdInput').addEventListener('input', applyFilters);
+    
+    // Load saved filters
+    loadSavedFilters();
+    
+    // Add custom styles for stage badges
+    addStageStyles();
+}
+
+// Add stage styles to the page
+function addStageStyles() {
+    if (!document.getElementById('stage-styles')) {
+        const style = document.createElement('style');
+        style.id = 'stage-styles';
+        style.textContent = `
+            .badge {
+                display: inline-block;
+                padding: 0.25rem 0.5rem;
+                font-size: 0.75rem;
+                font-weight: 600;
+                border-radius: 9999px;
+                text-transform: uppercase;
+                white-space: nowrap;
+            }
+            .badge-blue { background-color: #3b82f6; color: white; }
+            .badge-yellow { background-color: #f59e0b; color: white; }
+            .badge-green { background-color: #10b981; color: white; }
+            .badge-purple { background-color: #8b5cf6; color: white; }
+            .badge-red { background-color: #ef4444; color: white; }
+            .badge-gray { background-color: #6b7280; color: white; }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+// Fetch leads with retry mechanism - simplified to fetch all available leads
+async function fetchLeads() {
+    // Check rate limiting
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastFetchTime;
+    
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+        const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+        showNotification(`Please wait ${Math.ceil(waitTime / 1000)} seconds before fetching again`, 'warning');
+        return;
+    }
+    
+    if (isLoading) {
+        showNotification('A request is already in progress', 'warning');
+        return;
+    }
+    
+    isLoading = true;
+    lastFetchTime = now;
+    retryCount = 0;
+    
+    await fetchLeadsWithRetry();
+}
+
+// Fetch leads with retry logic - get all available leads
+async function fetchLeadsWithRetry() {
+    showLoading();
+    updateButtonStates();
+    
+    try {
+        // Reset data
+        allLeads = [];
+        let hasMore = true;
+        let page = 1;
+        let totalFetched = 0;
+        
+        // Fetch multiple pages to get all available leads (up to 1000 for performance)
+        while (hasMore && totalFetched < 1000 && page <= 10) {
+            const params = new URLSearchParams({
+                pageNumber: page,
+                pageSize: FETCH_SIZE
+            });
+            
+            const url = `${CRM_API_URL}?${params}`;
+            console.log(`Fetching page ${page}...`);
+            
+            const response = await fetchWithTimeout(url, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }, 30000); // 30 second timeout
+            
+            if (!response.ok) {
+                if (response.status === 500 && retryCount < MAX_RETRIES) {
+                    retryCount++;
+                    console.log(`Retry ${retryCount} after 500 error`);
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
+                    return fetchLeadsWithRetry();
+                }
+                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.code !== 0) {
+                throw new Error(result.msg || 'API returned error code');
+            }
+            
+            // Add leads to our collection
+            allLeads = allLeads.concat(result.data.list);
+            totalFetched += result.data.list.length;
+            
+            // Check if there are more pages
+            hasMore = result.data.list.length === FETCH_SIZE;
+            page++;
+            
+            // Small delay between requests
+            if (hasMore) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+        
+        console.log(`Fetched ${allLeads.length} total leads`);
+        
+        // Apply filters
+        applyFilters();
+        
+        // Update last sync time
+        updateLastSyncTime();
+        
+        // Save current filters
+        saveFilters();
+        
+        showNotification(`Fetched ${allLeads.length} leads successfully`, 'success');
+        
+    } catch (error) {
+        console.error('Error fetching leads:', error);
+        
+        if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            showNotification(`Error fetching leads. Retrying... (${retryCount}/${MAX_RETRIES})`, 'warning');
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
+            return fetchLeadsWithRetry();
+        }
+        
+        showError(error.message);
+        showNotification('Failed to fetch leads after multiple attempts', 'error');
+    } finally {
+        isLoading = false;
+        updateButtonStates();
+    }
+}
+
+// Fetch with timeout
+function fetchWithTimeout(url, options, timeout = 30000) {
+    return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timeout')), timeout)
+        )
+    ]);
+}
+
+// Apply filters to the fetched data - simplified with search functionality
+function applyFilters() {
+    console.log('Applying filters...');
+    
+    // Get filter values
+    const leadTypeFilter = document.getElementById('leadTypeFilter').value;
+    const searchTime = document.getElementById('searchTimeInput').value.toLowerCase();
+    const searchLeadId = document.getElementById('searchLeadIdInput').value.toLowerCase();
+    const pageSize = parseInt(document.getElementById('pageSizeFilter').value);
+    
+    // Start with all leads
+    filteredLeads = [...allLeads];
+    
+    // Apply lead type filter
+    if (leadTypeFilter) {
+        filteredLeads = filteredLeads.filter(lead => lead.leadType === leadTypeFilter);
+        console.log(`Lead type filter "${leadTypeFilter}": ${allLeads.length} -> ${filteredLeads.length}`);
+    }
+    
+    // Apply time search filter
+    if (searchTime) {
+        filteredLeads = filteredLeads.filter(lead => {
+            const formattedTime = formatDateTime(lead.createdTime).toLowerCase();
+            return formattedTime.includes(searchTime) || lead.createdTime.toLowerCase().includes(searchTime);
+        });
+        console.log(`Time search filter "${searchTime}": ${filteredLeads.length} results`);
+    }
+    
+    // Apply lead ID search filter
+    if (searchLeadId) {
+        filteredLeads = filteredLeads.filter(lead => {
+            return lead.id.toString().includes(searchLeadId);
+        });
+        console.log(`Lead ID search filter "${searchLeadId}": ${filteredLeads.length} results`);
+    }
+    
+    // Sort by created time (newest first)
+    filteredLeads.sort((a, b) => {
+        const dateA = new Date(a.createdTime);
+        const dateB = new Date(b.createdTime);
+        return dateB - dateA;
+    });
+    
+    // Update pagination
+    totalRecords = filteredLeads.length;
+    totalPages = Math.ceil(totalRecords / pageSize);
+    currentPage = 1;
+    
+    // Get current page of results
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    currentLeads = filteredLeads.slice(start, end);
+    
+    // Transform leads data - simplified with only necessary fields
+    currentLeads = currentLeads.map(lead => ({
+        id: lead.id,
+        organizationId: lead.organizationId,
+        firstName: lead.firstName || '',
+        lastName: lead.lastName || '',
+        fullName: lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+        phone: lead.phone,
+        phoneFormatted: formatPhoneToE164(lead.phone),
+        leadType: lead.leadType,
+        source: lead.source,
+        stage: lead.stage || 'new',
+        createdTime: lead.createdTime
+    }));
+    
+    // Clear selections
+    selectedLeads.clear();
+    
+    // Update active filters display
+    updateActiveFiltersDisplay(leadTypeFilter, searchTime, searchLeadId);
+    
+    // Display results
+    if (currentLeads.length > 0) {
+        displayLeads();
+    } else if (allLeads.length === 0) {
+        showNoResults('No leads fetched yet. Click "Fetch All Leads" to start.');
+    } else {
+        showNoResults('No leads match your search criteria. Try adjusting the filters.');
+    }
+    
+    // Update stats
+    updateStats();
+}
+
+// Format stage with color coding
+function formatStage(stage) {
+    const stageColors = {
+        'new': 'badge-blue',
+        'contacted': 'badge-yellow',
+        'qualified': 'badge-green',
+        'converted': 'badge-purple',
+        'lost': 'badge-red'
+    };
+    
+    const displayStage = stage || 'new';
+    const colorClass = stageColors[displayStage.toLowerCase()] || 'badge-gray';
+    
+    return `<span class="badge ${colorClass}">${displayStage.toUpperCase()}</span>`;
+}
+
+// Create table row for lead - simplified columns
+function createLeadRow(lead) {
+    const tr = document.createElement('tr');
+    tr.dataset.leadId = lead.id;
+    
+    tr.innerHTML = `
+        <td class="checkbox-column">
+            <input type="checkbox" 
+                   data-lead-id="${lead.id}" 
+                   onchange="toggleLeadSelection(${lead.id})"
+                   ${selectedLeads.has(lead.id) ? 'checked' : ''}>
+        </td>
+        <td>${lead.id}</td>
+        <td>${lead.fullName}</td>
+        <td class="phone-cell">
+            ${lead.phoneFormatted}
+            ${lead.phoneFormatted !== lead.phone ? `<br><small class="original-phone">${lead.phone}</small>` : ''}
+        </td>
+        <td>${lead.leadType || 'N/A'}</td>
+        <td>${formatStage(lead.stage)}</td>
+        <td>${lead.source || 'N/A'}</td>
+        <td title="${lead.createdTime}">${formatDateTime(lead.createdTime)}</td>
+        <td>
+            <button class="btn btn-primary btn-sm" onclick="quickCall(${lead.id})" title="Start call">
+                📞 Call
+            </button>
+        </td>
+    `;
+    
+    return tr;
+}
+
+// Display leads in table
+function displayLeads() {
+    const tbody = document.getElementById('leadsTableBody');
+    tbody.innerHTML = '';
+    
+    currentLeads.forEach(lead => {
+        const row = createLeadRow(lead);
+        tbody.appendChild(row);
+    });
+    
+    // Show table
+    document.getElementById('leadsTableContainer').style.display = 'block';
+    document.getElementById('leadsLoading').style.display = 'none';
+    document.getElementById('leadsError').style.display = 'none';
+    document.getElementById('noResults').style.display = 'none';
+    
+    // Update pagination
+    updatePagination();
+}
+
+// Update pagination for filtered results
+function updatePagination() {
+    const pageSize = parseInt(document.getElementById('pageSizeFilter').value);
+    const from = filteredLeads.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const to = Math.min(currentPage * pageSize, filteredLeads.length);
+    
+    document.getElementById('showingFrom').textContent = from;
+    document.getElementById('showingTo').textContent = to;
+    document.getElementById('totalRecords').textContent = filteredLeads.length;
+    document.getElementById('currentPage').textContent = currentPage;
+    document.getElementById('totalPages').textContent = totalPages || 1;
+    
+    // Update button states - fix pagination buttons
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+    
+    if (prevBtn) prevBtn.disabled = currentPage === 1 || isLoading || totalPages === 0;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages || isLoading || totalPages === 0;
+    
+    // Show filter summary
+    const filterSummary = [];
+    if (document.getElementById('leadTypeFilter').value) {
+        filterSummary.push(`Type: ${document.getElementById('leadTypeFilter').value}`);
+    }
+    if (document.getElementById('searchTimeInput').value) {
+        filterSummary.push(`Time: ${document.getElementById('searchTimeInput').value}`);
+    }
+    if (document.getElementById('searchLeadIdInput').value) {
+        filterSummary.push(`ID: ${document.getElementById('searchLeadIdInput').value}`);
+    }
+    
+    if (filterSummary.length > 0 && filteredLeads.length < allLeads.length) {
+        showNotification(`Filtered ${filteredLeads.length} from ${allLeads.length} total leads (${filterSummary.join(', ')})`, 'info');
+    }
+}
+
+// Navigate pages in filtered results
+function previousPage() {
+    if (currentPage > 1 && !isLoading) {
+        currentPage--;
+        showCurrentPage();
+    }
+}
+
+function nextPage() {
+    if (currentPage < totalPages && !isLoading) {
+        currentPage++;
+        showCurrentPage();
+    }
+}
+
+// Show current page of filtered results
+function showCurrentPage() {
+    const pageSize = parseInt(document.getElementById('pageSizeFilter').value);
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    
+    currentLeads = filteredLeads.slice(start, end).map(lead => ({
+        id: lead.id,
+        organizationId: lead.organizationId,
+        firstName: lead.firstName || '',
+        lastName: lead.lastName || '',
+        fullName: lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+        phone: lead.phone,
+        phoneFormatted: formatPhoneToE164(lead.phone),
+        leadType: lead.leadType,
+        source: lead.source,
+        stage: lead.stage || 'new',
+        createdTime: lead.createdTime
+    }));
+    
+    displayLeads();
+}
+
+// Update page size handler
+document.addEventListener('DOMContentLoaded', () => {
+    const pageSizeFilter = document.getElementById('pageSizeFilter');
+    if (pageSizeFilter) {
+        pageSizeFilter.addEventListener('change', () => {
+            if (filteredLeads.length > 0) {
+                currentPage = 1; // Reset to first page when changing page size
+                applyFilters();
+            }
+        });
+    }
+});
+
+// Enhanced stats update
+function updateStats() {
+    document.getElementById('totalLeadsCount').textContent = `${filteredLeads.length} / ${allLeads.length}`;
+    updateSelectionUI();
+    
+    // Update stage statistics if available
+    if (allLeads.length > 0) {
+        const stageCounts = {};
+        filteredLeads.forEach(lead => {
+            const stage = lead.stage || 'new';
+            stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+        });
+        
+        // Display stage counts if you have a container for it
+        console.log('Stage distribution:', stageCounts);
+    }
+}
+
+// Show no results with custom message
+function showNoResults(message = 'No leads found') {
+    document.getElementById('noResults').style.display = 'block';
+    document.getElementById('noResults').querySelector('p').textContent = message;
+    document.getElementById('leadsTableContainer').style.display = 'none';
+    document.getElementById('leadsLoading').style.display = 'none';
+    document.getElementById('leadsError').style.display = 'none';
+}
+
+
+
+// Format date time for display - fixed to handle CRM API format
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return 'N/A';
+    
+    try {
+        // CRM API returns format: "2025-08-27 19:17:43"
+        // Convert to proper ISO format for Date parsing
+        const isoString = dateTimeStr.replace(' ', 'T');
+        const date = new Date(isoString);
+        
+        // Format as MM/DD/YYYY HH:MM:SS to match your CRM display
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        
+        return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
+    } catch (e) {
+        console.error('Error formatting date:', e);
+        return dateTimeStr;
+    }
+}
+
+// Format phone to E164 - UPDATED to match campaign validation
+function formatPhoneToE164(phone) {
+    if (!phone) return null;
+    
+    // Remove all non-numeric characters
+    const cleaned = phone.replace(/\D/g, '');
+    
+    if (cleaned.length === 10) {
+        // US number without country code
+        return '+1' + cleaned;
+    } else if (cleaned.length === 11 && cleaned[0] === '1') {
+        // US number with country code
+        return '+' + cleaned;
+    } else if (phone.startsWith('+')) {
+        // Already has country code - validate length
+        if (cleaned.length >= 10 && cleaned.length <= 15) {
+            return phone;
+        }
+    } else if (cleaned.length >= 10 && cleaned.length <= 15) {
+        // Other international format - assume it needs a +
+        return '+' + cleaned;
+    }
+    
+    // Invalid phone number
+    return null;
+}
+
+// Add phone validation function to match campaign.js
+function validatePhoneNumber(phone) {
+    if (!phone) return false;
+    const cleaned = phone.replace(/\D/g, '');
+    return cleaned.length >= 10 && cleaned.length <= 15;
+}
+
+// Toggle lead selection
+function toggleLeadSelection(leadId) {
+    if (selectedLeads.has(leadId)) {
+        selectedLeads.delete(leadId);
+    } else {
+        selectedLeads.add(leadId);
+    }
+    
+    updateSelectionUI();
+}
+
+// Toggle select all
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAllCheckbox').checked;
+    
+    if (selectAll) {
+        currentLeads.forEach(lead => selectedLeads.add(lead.id));
+    } else {
+        selectedLeads.clear();
+    }
+    
+    // Update individual checkboxes
+    document.querySelectorAll('[data-lead-id]').forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    
+    updateSelectionUI();
+}
+
+// Select all leads
+function selectAllLeads() {
+    currentLeads.forEach(lead => selectedLeads.add(lead.id));
+    document.getElementById('selectAllCheckbox').checked = true;
+    
+    document.querySelectorAll('[data-lead-id]').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    
+    updateSelectionUI();
+}
+
+// Deselect all leads
+function deselectAllLeads() {
+    selectedLeads.clear();
+    
+    // Clear select all checkbox - with null check
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+    
+    // Clear individual checkboxes
+    document.querySelectorAll('[data-lead-id]').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    
+    // Update UI only if elements are accessible
+    try {
+        updateSelectionUI();
+    } catch (error) {
+        console.log('Selection UI update skipped (elements not accessible):', error.message);
+    }
+}
+
+// Update selection UI
+function updateSelectionUI() {
+    const selectedCount = selectedLeads.size;
+    
+    // Update counts - with null checks
+    const selectedLeadsCountEl = document.getElementById('selectedLeadsCount');
+    if (selectedLeadsCountEl) {
+        selectedLeadsCountEl.textContent = selectedCount;
+    }
+    
+    const selectedCountEl = document.getElementById('selectedCount');
+    if (selectedCountEl) {
+        selectedCountEl.textContent = selectedCount;
+    }
+    
+    // Enable/disable buttons - with null checks
+    const callSelectedBtn = document.getElementById('callSelectedBtn');
+    if (callSelectedBtn) {
+        callSelectedBtn.disabled = selectedCount === 0;
+    }
+    
+    const createCampaignBtn = document.getElementById('createCampaignBtn');
+    if (createCampaignBtn) {
+        createCampaignBtn.disabled = selectedCount === 0;
+    }
+    
+    const exportSelectedBtn = document.getElementById('exportSelectedBtn');
+    if (exportSelectedBtn) {
+        exportSelectedBtn.disabled = selectedCount === 0;
+    }
+    
+    // Update select all checkbox state
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectedCount === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    } else if (selectedCount === currentLeads.length) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    }
+}
+
+// Quick call single lead
+function quickCall(leadId) {
+    const lead = currentLeads.find(l => l.id === leadId);
+    if (!lead) return;
+    
+    // Store current lead for modal
+    window.currentQuickCallLead = lead;
+    
+    // Populate modal
+    document.getElementById('quickCallLeadName').textContent = lead.fullName;
+    document.getElementById('quickCallPhone').textContent = lead.phoneFormatted;
+    document.getElementById('quickCallLeadType').textContent = lead.leadType || 'N/A';
+    document.getElementById('quickCallSource').textContent = lead.source || 'N/A';
+    document.getElementById('quickCallStage').textContent = lead.stage || 'new';
+    document.getElementById('quickCallNotes').value = '';
+    
+    // Show modal
+    document.getElementById('quickCallModal').style.display = 'flex';
+}
+
+// Close quick call modal
+function closeQuickCallModal() {
+    document.getElementById('quickCallModal').style.display = 'none';
+    window.currentQuickCallLead = null;
+}
+
+// Initiate quick call
+async function initiateQuickCall() {
+    const lead = window.currentQuickCallLead;
+    if (!lead) return;
+    
+    const notes = document.getElementById('quickCallNotes').value;
+    
+    try {
+        // Create call through API
+        const response = await apiCall('/api/calls/create', {
+            method: 'POST',
+            body: JSON.stringify({
+                phone_number: lead.phoneFormatted,
+                first_name: lead.firstName,
+                last_name: lead.lastName,
+                metadata: {
+                    leadId: lead.id,
+                    organizationId: lead.organizationId,
+                    leadType: lead.leadType,
+                    source: lead.source,
+                    stage: lead.stage,
+                    notes: notes,
+                    fromPanel: 'leads'
+                }
+            })
+        });
+        
+        showNotification(`Call initiated to ${lead.fullName}`, 'success');
+        closeQuickCallModal();
+        
+        // Switch to monitor panel to see the call
+        document.querySelector('[data-tab="monitor"]').click();
+        
+    } catch (error) {
+        console.error('Error initiating call:', error);
+        showNotification('Failed to initiate call: ' + error.message, 'error');
+    }
+}
+
+// Call selected leads (DIRECT CALLING)
+async function callSelectedLeads() {
+    const selectedLeadIds = Array.from(selectedLeads);
+    if (selectedLeadIds.length === 0) {
+        showNotification('Please select leads to call', 'warning');
+        return;
+    }
+    
+    // Confirm the action
+    if (!confirm(`Are you sure you want to start calling ${selectedLeadIds.length} selected leads?`)) {
+        return;
+    }
+    
+    // Get selected lead objects from filtered leads
+    const leadsToCall = filteredLeads.filter(lead => selectedLeads.has(lead.id));
+    
+    // Validate and format phone numbers
+    const validLeads = [];
+    const invalidLeads = [];
+    
+    leadsToCall.forEach(lead => {
+        const formattedPhone = formatPhoneToE164(lead.phone);
+        if (formattedPhone && validatePhoneNumber(lead.phone)) {
+            validLeads.push({
+                ...lead,
+                formattedPhone: formattedPhone
+            });
+        } else {
+            invalidLeads.push(lead);
+        }
+    });
+    
+    if (validLeads.length === 0) {
+        showNotification('No leads have valid phone numbers for calling', 'error');
+        return;
+    }
+    
+    if (invalidLeads.length > 0) {
+        showNotification(`${invalidLeads.length} leads have invalid phone numbers and will be skipped`, 'warning');
+    }
+    
+    // Show progress notification
+    showNotification(`Starting calls to ${validLeads.length} leads...`, 'info');
+    
+    // Disable the button to prevent multiple clicks
+    const callButton = document.getElementById('callSelectedBtn');
+    const originalText = callButton.innerHTML;
+    callButton.disabled = true;
+    callButton.innerHTML = '<span class="btn-icon">⏳</span> Calling...';
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    try {
+        // Switch to monitor panel to see the calls
+        document.querySelector('[data-tab="monitor"]').click();
+        
+        // Start calls with a small delay between each to avoid overwhelming the system
+        for (let i = 0; i < validLeads.length; i++) {
+            const lead = validLeads[i];
+            
+            try {
+                const response = await fetch('/api/calls/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        phone_number: lead.formattedPhone,
+                        first_name: lead.firstName || '',
+                        last_name: lead.lastName || '',
+                        metadata: {
+                            leadId: lead.id,
+                            organizationId: lead.organizationId,
+                            leadType: lead.leadType,
+                            source: lead.source,
+                            stage: lead.stage,
+                            fromPanel: 'leads-bulk',
+                            batchCall: true
+                        }
+                    })
+                });
+                
+                if (response.ok) {
+                    successCount++;
+                    console.log(`✅ Call initiated for ${lead.fullName} (${lead.formattedPhone})`);
+                } else {
+                    failCount++;
+                    console.error(`❌ Failed to call ${lead.fullName}: ${response.statusText}`);
+                }
+                
+                // Small delay between calls to avoid rate limiting
+                if (i < validLeads.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                }
+                
+            } catch (error) {
+                failCount++;
+                console.error(`❌ Error calling ${lead.fullName}:`, error);
+            }
+            
+            // Update button with progress
+            callButton.innerHTML = `<span class="btn-icon">📞</span> Calling... (${i + 1}/${validLeads.length})`;
+        }
+        
+        // Show final results
+        if (successCount > 0) {
+            showNotification(`✅ Successfully initiated ${successCount} calls${failCount > 0 ? ` (${failCount} failed)` : ''}`, 'success');
+            
+            // Clear selection after successful calls (before switching panels)
+            deselectAllLeads();
+        } else {
+            showNotification(`❌ Failed to initiate any calls`, 'error');
+        }
+        
+        // Switch to monitor panel to see the calls
+        document.querySelector('[data-tab="monitor"]').click();
+        
+    } catch (error) {
+        console.error('Error in bulk calling:', error);
+        showNotification('Failed to initiate calls: ' + error.message, 'error');
+    } finally {
+        // Re-enable button
+        callButton.disabled = false;
+        callButton.innerHTML = originalText;
+    }
+}
+
+// Create campaign from selected leads (for campaign panel)
+async function createCampaignFromLeads() {
+    const selectedLeadIds = Array.from(selectedLeads);
+    if (selectedLeadIds.length === 0) {
+        showNotification('Please select leads for campaign', 'warning');
+        return;
+    }
+    
+    // Get selected lead objects from filtered leads
+    const leadsToCall = filteredLeads.filter(lead => selectedLeads.has(lead.id));
+    
+    // Prepare contacts for campaign with proper E164 formatting
+    const contacts = leadsToCall.map(lead => {
+        // Format phone number to E164
+        const formattedPhone = formatPhoneToE164(lead.phone);
+        const isValidPhone = formattedPhone !== null && formattedPhone !== '';
+        
+        return {
+            first_name: lead.firstName,
+            last_name: lead.lastName,
+            phone_number: formattedPhone || lead.phone, // Use formatted number or original if formatting failed
+            phone_formatted: formattedPhone,
+            phone_valid: isValidPhone,
+            lead_source: lead.source,
+            case_type: lead.leadType,
+            stage: lead.stage || 'new',
+            organizationid: lead.organizationId,
+            leadid: lead.id
+        };
+    });
+    
+    // Filter out contacts with invalid phone numbers
+    const validContacts = contacts.filter(contact => contact.phone_valid);
+    const invalidCount = contacts.length - validContacts.length;
+    
+    if (validContacts.length === 0) {
+        showNotification('No leads have valid phone numbers for campaign', 'error');
+        return;
+    }
+    
+    if (invalidCount > 0) {
+        showNotification(`${invalidCount} leads have invalid phone numbers and will be skipped`, 'warning');
+    }
+    
+    // Create campaign name
+    const leadType = document.getElementById('leadTypeFilter').value;
+    const campaignName = leadType 
+        ? `CRM ${leadType} Leads - ${new Date().toLocaleString()}`
+        : `CRM Leads - ${new Date().toLocaleString()}`;
+    
+    // Switch to campaign panel and populate
+    document.querySelector('[data-tab="campaign"]').click();
+    
+    // Wait for panel to load
+    setTimeout(() => {
+        // Set campaign data with properly formatted contacts
+        window.currentCampaignData = validContacts;
+        document.getElementById('campaignName').value = campaignName;
+        
+        // Trigger campaign preview
+        if (typeof displayCSVPreview === 'function') {
+            displayCSVPreview(validContacts);
+            document.getElementById('csvPreview').style.display = 'block';
+            document.getElementById('startCampaignBtn').disabled = false;
+            
+            showNotification(`${validContacts.length} leads ready for campaign (${invalidCount} invalid numbers skipped)`, 'success');
+        }
+    }, 500);
+}
+
+// Export selected leads
+function exportSelectedLeads() {
+    const selectedLeadIds = Array.from(selectedLeads);
+    if (selectedLeadIds.length === 0) return;
+    
+    // Get selected lead objects from filtered leads
+    const leadsToExport = filteredLeads.filter(lead => selectedLeads.has(lead.id));
+    
+    // Create CSV content - simplified columns
+    const headers = ['ID', 'Name', 'Phone', 'Lead Type', 'Stage', 'Source', 'Created Time'];
+    const rows = leadsToExport.map(lead => [
+        lead.id,
+        lead.fullName,
+        formatPhoneToE164(lead.phone),
+        lead.leadType,
+        lead.stage || 'new',
+        lead.source,
+        formatDateTime(lead.createdTime)
+    ]);
+    
+    // Convert to CSV
+    const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+    
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `

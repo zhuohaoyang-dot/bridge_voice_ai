@@ -1,0 +1,630 @@
+<div class="leads-panel">
+    <div class="panel-header">
+        <h2>CRM Leads</h2>
+        <div class="header-stats">
+            <span>Total Leads: <strong id="totalLeadsCount">0 / 0</strong></span>
+            <span>Selected: <strong id="selectedLeadsCount">0</strong></span>
+            <span>Last Sync: <strong id="lastSyncTime">Never</strong></span>
+        </div>
+    </div>
+    
+    <!-- Control Actions -->
+    <div class="panel-section">
+        <div class="action-buttons">
+            <button id="fetchLeadsBtn" onclick="fetchLeads()" class="btn btn-primary">
+                <span class="btn-icon">🔄</span> Fetch All Leads
+            </button>
+            <button id="clearFiltersBtn" onclick="clearFilters()" class="btn btn-secondary">
+                <span class="btn-icon">🗑️</span> Clear Filters
+            </button>
+        </div>
+    </div>
+    
+    <!-- Filters Section -->
+    <div class="panel-section">
+        <div class="filters-row">
+            <div class="filter-group">
+                <label for="leadTypeFilter">Lead Type</label>
+                <select id="leadTypeFilter" class="form-control">
+                    <option value="">All Types</option>
+                    <!-- Options will be loaded dynamically from API -->
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="searchTimeInput">Search Time</label>
+                <input type="text" id="searchTimeInput" class="form-control" placeholder="Search by date/time...">
+            </div>
+            
+            <div class="filter-group">
+                <label for="searchLeadIdInput">Search Lead ID</label>
+                <input type="text" id="searchLeadIdInput" class="form-control" placeholder="Search by lead ID...">
+            </div>
+            
+            <div class="filter-group">
+                <label for="pageSizeFilter">Page Size</label>
+                <select id="pageSizeFilter" class="form-control">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Active Filters Display -->
+    <div id="activeFiltersDisplay" class="active-filters" style="display: none;">
+        <span class="filter-label">Active Filters:</span>
+        <span id="filterTags" class="filter-tags"></span>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="leadsLoading" class="loading-container" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Loading leads...</p>
+    </div>
+    
+    <!-- Error State -->
+    <div id="leadsError" class="error-container" style="display: none;">
+        <div class="error-icon">❌</div>
+        <div class="error-message">An error occurred</div>
+        <button onclick="retryFetch()" class="btn btn-primary">Retry</button>
+    </div>
+    
+    <!-- No Results State -->
+    <div id="noResults" class="no-results" style="display: none;">
+        <div class="no-results-icon">📭</div>
+        <p>No leads found</p>
+    </div>
+    
+    <!-- Table Container -->
+    <div id="leadsTableContainer" class="table-container" style="display: none;">
+        <div class="table-actions">
+            <div class="select-actions">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                    <span>Select All</span>
+                </label>
+                <span class="selection-info">(<span id="selectedCount">0</span> selected)</span>
+            </div>
+            <div class="bulk-actions">
+                <button id="callSelectedBtn" onclick="callSelectedLeads()" class="btn btn-primary" disabled>
+                    <span class="btn-icon">📞</span> Call Selected
+                </button>
+                <button id="createCampaignBtn" onclick="createCampaignFromLeads()" class="btn btn-success" disabled>
+                    <span class="btn-icon">🚀</span> Create Campaign
+                </button>
+                <button id="exportSelectedBtn" onclick="exportSelectedLeads()" class="btn btn-secondary" disabled>
+                    <span class="btn-icon">📊</span> Export Selected
+                </button>
+            </div>
+        </div>
+        
+        <div class="table-wrapper">
+            <table class="leads-table">
+                <thead>
+                    <tr>
+                        <th class="checkbox-column">
+                            <input type="checkbox" style="visibility: hidden;">
+                        </th>
+                        <th>ID</th>
+                        <th>Convoso ID</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Lead Type</th>
+                        <th>Stage</th>
+                        <th>Source</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="leadsTableBody">
+                    <!-- Leads will be populated here -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Showing <span id="showingFrom">0</span> to <span id="showingTo">0</span> of <span id="totalRecords">0</span> results
+            </div>
+            <div class="pagination-controls">
+                <button id="prevPageBtn" onclick="previousPage()" class="btn btn-secondary" disabled>Previous</button>
+                <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+                <button id="nextPageBtn" onclick="nextPage()" class="btn btn-secondary">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Call Modal -->
+<div id="quickCallModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Quick Call</h3>
+            <button class="close-btn" onclick="closeQuickCallModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="lead-info">
+                <h4 id="quickCallLeadName">Lead Name</h4>
+                <p><strong>Phone:</strong> <span id="quickCallPhone">+1234567890</span></p>
+                <p><strong>Lead Type:</strong> <span id="quickCallLeadType">PFAS</span></p>
+                <p><strong>Source:</strong> <span id="quickCallSource">Website</span></p>
+                <p><strong>Stage:</strong> <span id="quickCallStage">new</span></p>
+            </div>
+            <div class="assistant-selection">
+                <label for="quickCallAssistant">AI Assistant <span style="color: red;">*</span></label>
+                <select id="quickCallAssistant" class="form-control" required>
+                    <option value="">Select Assistant</option>
+                    <option value="PFAS">PFAS</option>
+                    <option value="HAIR_STRAIGHTENER">Hair Straightener</option>
+                </select>
+            </div>
+            <div class="call-notes">
+                <label for="quickCallNotes">Call Notes (Optional)</label>
+                <textarea id="quickCallNotes" rows="3" placeholder="Add any notes for this call..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="initiateQuickCall()" class="btn btn-primary">
+                <span class="btn-icon">📞</span> Start Call
+            </button>
+            <button onclick="closeQuickCallModal()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Call Modal -->
+<div id="bulkCallModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Bulk Call</h3>
+            <button class="close-btn" onclick="closeBulkCallModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="bulk-call-info">
+                <p><strong>Selected Leads:</strong> <span id="bulkCallCount">0</span></p>
+                <p>Choose an AI assistant for all selected leads:</p>
+            </div>
+            <div class="assistant-selection">
+                <label for="bulkCallAssistant">AI Assistant <span style="color: red;">*</span></label>
+                <select id="bulkCallAssistant" class="form-control" required>
+                    <option value="">Select Assistant</option>
+                    <option value="PFAS">PFAS</option>
+                    <option value="HAIR_STRAIGHTENER">Hair Straightener</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="initiateBulkCall()" class="btn btn-primary">
+                <span class="btn-icon">📞</span> Start Bulk Call
+            </button>
+            <button onclick="closeBulkCallModal()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Leads Panel Styles */
+.leads-panel {
+    padding: 20px;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.panel-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: #1f2937;
+}
+
+.header-stats {
+    display: flex;
+    gap: 25px;
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.header-stats strong {
+    color: #1f2937;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+/* Filters */
+.filters-row {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.filter-group {
+    flex: 1;
+    min-width: 150px;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+}
+
+/* Active Filters */
+.active-filters {
+    margin: 15px 0;
+    padding: 10px;
+    background: #eff6ff;
+    border: 1px solid #3b82f6;
+    border-radius: 6px;
+}
+
+.filter-label {
+    font-weight: 600;
+    color: #1e40af;
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+.filter-tags {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filter-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    background: white;
+    border: 1px solid #3b82f6;
+    border-radius: 20px;
+    font-size: 13px;
+    color: #1e40af;
+}
+
+.filter-tag .remove-filter {
+    cursor: pointer;
+    color: #dc2626;
+    font-weight: bold;
+    margin-left: 5px;
+}
+
+/* Loading States */
+.loading-container,
+.error-container,
+.no-results {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.error-icon,
+.no-results-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+}
+
+.error-message {
+    color: #ef4444;
+    margin: 10px 0;
+}
+
+/* Table Styles */
+.table-container {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.table-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.select-actions,
+.bulk-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.selection-info {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.leads-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.leads-table th {
+    background: #f3f4f6;
+    padding: 12px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.leads-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 14px;
+}
+
+.leads-table tr:hover {
+    background: #f9fafb;
+}
+
+.checkbox-column {
+    width: 40px;
+    text-align: center;
+}
+
+.phone-cell .original-phone {
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+/* Pagination */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #f9fafb;
+    border-top: 1px solid #e5e7eb;
+}
+
+.pagination-info {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.page-info {
+    font-size: 14px;
+    color: #374151;
+}
+
+/* Buttons */
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.2s;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #2563eb;
+}
+
+.btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #4b5563;
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+    background: #059669;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.btn-icon {
+    font-size: 16px;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #6b7280;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.lead-info {
+    background: #f9fafb;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+}
+
+.lead-info h4 {
+    margin: 0 0 10px;
+}
+
+.lead-info p {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.assistant-selection {
+    margin-bottom: 15px;
+}
+
+.assistant-selection label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.assistant-selection select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.call-notes label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.call-notes textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    resize: vertical;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 20px;
+    border-top: 1px solid #e5e7eb;
+}
+
+/* Stage badges */
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.badge-blue { background-color: #3b82f6; color: white; }
+.badge-yellow { background-color: #f59e0b; color: white; }
+.badge-green { background-color: #10b981; color: white; }
+.badge-purple { background-color: #8b5cf6; color: white; }
+.badge-red { background-color: #ef4444; color: white; }
+.badge-gray { background-color: #6b7280; color: white; }
+</style>
