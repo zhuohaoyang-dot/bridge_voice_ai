@@ -24,9 +24,8 @@ const webhookRoutes = require('./routes/webhooks');
 const crmRoutes = require('./routes/crm');
 const conferenceRoutes = require('./routes/conference');
 const vapiToolsRoutes = require('./routes/vapiTools');
-const { router: sseRoutes } = require('./routes/sse');
 
-// WebSocket server (disabled in production/Vercel)
+// WebSocket server
 const { initializeWebSocketServer } = require('./websocket');
 
 // Validate critical services on startup
@@ -60,7 +59,9 @@ app.use(helmet({
         "ws://*.vapi.ai", 
         "https://api.vapi.ai",
         "https://*.ngrok-free.app",
-        "wss://*.ngrok-free.app"
+        "wss://*.ngrok-free.app",
+        "https://*.railway.app",
+        "wss://*.railway.app"
       ],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       scriptSrcAttr: ["'unsafe-inline'"],
@@ -78,7 +79,11 @@ app.use(helmet({
 app.use(cors({
   origin: function(origin, callback) {
     // Allow same-origin requests or requests from the same host
-    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    if (!origin || 
+        origin.includes('localhost') || 
+        origin.includes('127.0.0.1') ||
+        origin.includes('railway.app') ||
+        origin.includes(process.env.WEBHOOK_URL)) {
       callback(null, true);
     } else {
       callback(null, false);
@@ -149,8 +154,6 @@ app.use('/api/crm', crmRoutes);
 app.use('/api/vapi-tools', vapiToolsRoutes);
 // Add alias for more intuitive VAPI URLs
 app.use('/api/vapi', vapiToolsRoutes);
-// Server-Sent Events for real-time updates (Vercel-compatible)
-app.use('/api/sse', sseRoutes);
 
 // Default route - serve the main HTML file
 app.get('/', (req, res) => {
@@ -228,15 +231,11 @@ server.listen(PORT, async () => {
   // Initialize Redis FIRST before anything else that might use it
   await initializeRedis();
   
-  // Initialize WebSocket only in development (not supported on Vercel)
-  if (process.env.NODE_ENV !== 'production') {
-    setTimeout(() => {
-      initializeWebSocketServer();
-      logger.info(`📡 WebSocket server running on port 8010`);
-    }, 1000);
-  } else {
-    logger.info(`📡 Using Server-Sent Events for real-time updates (Vercel-compatible)`);
-  }
+  // Initialize WebSocket with a small delay to ensure HTTP server is ready
+  setTimeout(() => {
+    initializeWebSocketServer();
+    logger.info(`📡 WebSocket server running on port 8010`);
+  }, 1000);
   
   // Configure Vapi webhook after server starts
   await configureVapiWebhook();

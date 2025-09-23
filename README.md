@@ -1,190 +1,196 @@
-# Bridge Legal PFAS Call System
+# PFAS Call System - Bridge Legal
 
-A comprehensive outbound call campaign management system for Bridge Legal's PFAS and mass tort lead qualification. Built with Node.js/Express backend, integrates with VAPI AI for automated voice calls, includes real-time monitoring, Redis-based campaign management, CRM integration, and a modern dashboard.
+A comprehensive outbound call system with campaign management, live monitoring, and seamless call transfers.
 
-## 🚀 Quick Deploy to Vercel
+## Features
 
-**Ready for immediate deployment!** This system is fully configured for Vercel deployment.
+- 🎯 **Campaign Management**: Create and manage call campaigns with CSV imports
+- 📞 **Live Call Monitoring**: Real-time call status and transcript monitoring
+- 🔄 **Seamless Transfers**: Automatic transfers between VAPI AI and human agents
+- 📊 **Analytics Dashboard**: Track call performance and campaign metrics
+- 🔗 **WebSocket Integration**: Real-time updates and live monitoring
+- 🗄️ **Redis Caching**: Fast data access and campaign queue management
 
-### Option 1: One-Command Deploy
-```bash
-./deploy.sh
-```
+## Architecture
 
-### Option 2: Manual Steps
-1. Push to GitHub
-2. Connect to Vercel
-3. Configure environment variables
-4. Deploy!
+### Backend Services
+- **Express.js API**: RESTful API endpoints
+- **WebSocket Server**: Real-time communication
+- **Redis**: Data caching and campaign queues
+- **VAPI Integration**: AI voice assistant
+- **Twilio Integration**: Call handling and transfers
 
-📚 **See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions**
+### Frontend
+- **Vanilla JavaScript**: Lightweight frontend
+- **WebSocket Client**: Real-time updates
+- **Campaign Management UI**: User-friendly interface
 
-## ✨ Features
-
-- **Campaign Management**: Upload CSV files and create automated outbound call campaigns
-- **Real-Time Monitoring**: Live call monitoring with transcripts and call controls
-- **AI Integration**: VAPI AI-powered voice assistants for PFAS and hair straightener campaigns
-- **CRM Integration**: Seamless lead processing and qualification
-- **Call Controls**: Mute, transfer, and end calls in real-time
-- **WebSocket/SSE**: Real-time updates (WebSocket for dev, SSE for production)
-- **Conference Calls**: Seamless agent transfers via Twilio
-- **Dashboard**: Modern web interface for monitoring and management
-
-## 🏗️ Architecture
-
-### Backend (Node.js/Express)
-- **API Server**: RESTful API with comprehensive endpoints
-- **WebSocket Server**: Real-time communication (development)
-- **SSE Support**: Server-Sent Events for production (Vercel-compatible)
-- **Redis Integration**: Campaign state management and caching
-- **Webhook Processing**: VAPI AI event handling
-
-### Frontend (Vanilla JS)
-- **Campaign Panel**: CSV upload and campaign management
-- **Monitor Panel**: Live call monitoring with controls
-- **Leads Panel**: CRM integration and lead processing
-- **Real-time Updates**: WebSocket/SSE based live updates
-
-### Integrations
-- **VAPI AI**: Voice AI for automated calling
-- **Twilio**: Conference calling and telephony
-- **Redis**: State management and caching
-- **CRM API**: Lead processing and qualification
-
-## 🛠️ Development Setup
+## Local Development
 
 ### Prerequisites
 - Node.js 16+
 - Redis server
-- VAPI AI account
-- Twilio account
+- VAPI API account
+- Twilio account (for transfers)
 
-### Local Installation
+### Installation
+
+1. Clone the repository:
 ```bash
-# Clone and install
+git clone <your-repo-url>
+cd pfas_call_system
+```
+
+2. Install dependencies:
+```bash
 npm install
+```
 
-# Start Redis
-redis-server
-
-# Set up environment variables
+3. Set up environment variables:
+```bash
 cp env.example .env
-# Edit .env with your API keys
+# Edit .env with your actual values
+```
 
-# Start development server
+4. Start Redis server:
+```bash
+npm run redis:start
+```
+
+5. Start the development server:
+```bash
 npm run dev
 ```
 
-### Environment Variables
-See `env.example` for all required variables:
-- VAPI AI credentials
-- Twilio credentials  
-- Redis connection
-- CRM API tokens
-- Webhook configuration
+The application will be available at `http://localhost:3010`
 
-## 📦 Production Deployment
+## Deployment to Railway
 
-### Vercel (Recommended)
-- ✅ Serverless functions
-- ✅ Auto-scaling
-- ✅ SSL certificates
-- ✅ CDN integration
-- ✅ Environment variables
-- ✅ GitHub integration
+### Step 1: Prepare Your Repository
 
-### What's Included for Vercel:
-- `vercel.json` - Deployment configuration
-- `server/routes/sse.js` - Real-time updates (WebSocket alternative)
-- `client/js/sse.js` - Client-side SSE implementation
-- Conditional WebSocket disabling in production
-- Universal broadcast system (WebSocket + SSE)
+1. **Push to GitHub**:
+```bash
+git add .
+git commit -m "Prepare for Railway deployment"
+git push origin main
+```
 
-### External Services Needed:
-1. **Redis Database**: Vercel KV, Upstash, or Redis Cloud
-2. **VAPI AI Account**: Voice AI service
-3. **Twilio Account**: Conference calling
-4. **CRM Integration**: Lead processing
+### Step 2: Deploy on Railway
 
-## 🔧 Configuration
+1. **Go to [Railway.app](https://railway.app)** and sign up/login
+2. **Click "New Project"** → **"Deploy from GitHub repo"**
+3. **Select your repository**
+4. **Add Redis service**:
+   - Click "Add Service" → "Database" → "Redis"
+   - This will automatically set the `REDIS_URL` environment variable
 
-### Campaign Types
-- **PFAS**: Per- and polyfluoroalkyl substances campaigns
-- **Hair Straightener**: Hair straightener litigation campaigns
+### Step 3: Configure Environment Variables
 
-### Call Flow
-1. Campaign upload (CSV)
-2. VAPI AI initiates calls
-3. Real-time monitoring
-4. Lead qualification
-5. Agent transfer (if needed)
-6. CRM integration
+In your Railway project dashboard, go to **Variables** and add:
 
-### Monitoring Features
-- Live call status
-- Real-time transcripts
-- Call controls (mute/transfer/end)
-- Campaign statistics
-- Lead qualification tracking
+```env
+NODE_ENV=production
+WEBHOOK_URL=https://your-app-name.railway.app/webhook
+VAPI_API_KEY=your_vapi_api_key_here
+VAPI_ASSISTANT_ID=your_vapi_assistant_id_here
+TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
+TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
+TWILIO_PHONE_NUMBER=your_twilio_phone_number_here
+```
 
-## 📊 API Endpoints
+### Step 4: Configure Domain (Optional)
 
-### Core APIs
-- `GET /api/health` - System health check
-- `POST /api/campaigns` - Create campaign
-- `GET /api/calls/live` - Live calls
-- `POST /webhook` - VAPI webhooks
+1. In Railway dashboard, go to **Settings** → **Domains**
+2. **Generate domain** or **add custom domain**
+3. **Update WEBHOOK_URL** environment variable with your new domain
 
-### Real-time APIs
-- `GET /api/sse/events` - Server-Sent Events stream
-- `GET /api/sse/campaigns/active` - Active campaigns
-- `GET /api/sse/calls/live` - Live calls polling
+### Step 5: Verify Deployment
 
-### Integration APIs
-- `POST /api/crm/leads` - CRM lead processing
-- `POST /api/vapi/transfer` - Conference transfers
-- `GET /api/conference/status` - Transfer status
+1. Visit your Railway app URL
+2. Check `/api/health` endpoint for system status
+3. Verify Redis connection in logs
+4. Test campaign creation and call functionality
 
-## 🔒 Security
+## Environment Variables
 
-- Helmet.js security headers
-- CORS configuration
-- Rate limiting
-- Webhook signature validation
-- Environment variable protection
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `PORT` | Server port (Railway sets this automatically) | No |
+| `NODE_ENV` | Environment (production/development) | Yes |
+| `REDIS_URL` | Redis connection URL (Railway sets this automatically) | Yes |
+| `WEBHOOK_URL` | Your app's webhook URL for VAPI | Yes |
+| `VAPI_API_KEY` | VAPI API key | Yes |
+| `VAPI_ASSISTANT_ID` | VAPI assistant ID | Yes |
+| `TWILIO_ACCOUNT_SID` | Twilio account SID | Yes |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token | Yes |
+| `TWILIO_PHONE_NUMBER` | Twilio phone number for transfers | Yes |
+| `CONVOSO_API_KEY` | Convoso API key (if using) | No |
+| `CONVOSO_BASE_URL` | Convoso API base URL | No |
 
-## 📈 Monitoring
+## API Endpoints
 
-### Health Checks
-- Redis connectivity
-- VAPI AI status
-- Twilio configuration
-- CRM integration
+### Health Check
+- `GET /api/health` - System health status
 
-### Logging
-- Winston-based logging
-- Request/response tracking
-- Error monitoring
-- Performance metrics
+### Campaigns
+- `POST /api/campaigns` - Create new campaign
+- `GET /api/campaigns` - List all campaigns
+- `GET /api/campaigns/:id` - Get campaign details
+- `POST /api/campaigns/:id/start` - Start campaign
+- `POST /api/campaigns/:id/stop` - Stop campaign
+- `DELETE /api/campaigns/:id` - Delete campaign
 
-## 🤝 Support
+### Calls
+- `GET /api/calls` - List all calls
+- `GET /api/calls/:id` - Get call details
+- `POST /api/calls/:id/transfer` - Transfer call to human
+
+### Webhooks
+- `POST /webhook/vapi` - VAPI webhook endpoint
+- `POST /webhook/twilio` - Twilio webhook endpoint
+
+## WebSocket Events
+
+### Client to Server
+- `subscribe_to_campaign` - Subscribe to campaign updates
+- `get_campaign_status` - Request campaign status
+
+### Server to Client
+- `campaign_status` - Campaign status updates
+- `call_started` - New call initiated
+- `call_updated` - Call status changed
+- `call_ended` - Call completed
+- `transcript_update` - Live transcript updates
+
+## Troubleshooting
 
 ### Common Issues
-- **Redis Connection**: Check REDIS_URL in environment
-- **WebSocket Errors**: Normal in production (uses SSE instead)
-- **VAPI Webhooks**: Ensure WEBHOOK_URL is accessible
-- **Twilio Transfers**: Verify account SID and auth token
 
-### Troubleshooting
-1. Check Vercel function logs
-2. Verify environment variables
-3. Test webhook endpoints
-4. Monitor Redis connectivity
+1. **Redis Connection Failed**
+   - Ensure Redis service is running on Railway
+   - Check REDIS_URL environment variable
 
-## 📄 License
+2. **VAPI Webhook Not Working**
+   - Verify WEBHOOK_URL is correct
+   - Check VAPI assistant configuration
+   - Ensure webhook endpoint is accessible
 
-Bridge Legal Internal Use
+3. **Call Transfers Failing**
+   - Verify Twilio credentials
+   - Check phone number format
+   - Ensure Twilio webhook URLs are configured
 
----
+### Logs
 
-**Ready to deploy?** Run `./deploy.sh` or follow the [detailed deployment guide](./DEPLOYMENT.md)! 
+Check Railway logs in the dashboard for detailed error information.
+
+## Support
+
+For issues and questions:
+1. Check the logs in Railway dashboard
+2. Verify all environment variables are set correctly
+3. Ensure external services (VAPI, Twilio) are properly configured
+
+## License
+
+Private - Bridge Legal 

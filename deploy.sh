@@ -1,85 +1,70 @@
 #!/bin/bash
 
-# Bridge Legal PFAS Call System - Deployment Script
-# This script helps prepare and deploy the system to Vercel via GitHub
+# PFAS Call System - Railway Deployment Script
 
-set -e  # Exit on any error
-
-echo "🚀 Bridge Legal PFAS Call System - Deployment Setup"
-echo "=================================================="
+echo "🚀 PFAS Call System - Railway Deployment"
+echo "========================================"
 
 # Check if git is initialized
 if [ ! -d ".git" ]; then
-    echo "📦 Initializing Git repository..."
+    echo "❌ Git repository not found. Initializing..."
     git init
-    echo "✅ Git repository initialized"
-else
-    echo "✅ Git repository already exists"
+    git branch -M main
 fi
 
-# Check if we have a remote origin
+# Check for uncommitted changes
+if [[ `git status --porcelain` ]]; then
+    echo "📝 Found uncommitted changes. Adding all files..."
+    git add .
+    
+    # Prompt for commit message
+    read -p "Enter commit message (or press Enter for default): " commit_message
+    if [ -z "$commit_message" ]; then
+        commit_message="Prepare for Railway deployment"
+    fi
+    
+    git commit -m "$commit_message"
+else
+    echo "✅ No uncommitted changes found"
+fi
+
+# Check if remote origin exists
 if ! git remote get-url origin > /dev/null 2>&1; then
     echo ""
-    echo "❗ No git remote origin found."
-    echo "   Please create a GitHub repository and add it as origin:"
-    echo "   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git"
+    echo "⚠️  No git remote found!"
+    echo "Please add your GitHub repository as origin:"
+    echo "git remote add origin https://github.com/yourusername/your-repo-name.git"
     echo ""
-    read -p "Press Enter when you've added the remote origin..."
-fi
-
-# Add all files to git
-echo "📝 Adding files to git..."
-git add .
-
-# Check if there are changes to commit
-if git diff --staged --quiet; then
-    echo "✅ No changes to commit"
-else
-    echo "💾 Committing changes..."
-    git commit -m "Deploy: Bridge Legal PFAS Call System ready for Vercel deployment
-
-- Added Vercel configuration (vercel.json)
-- Created SSE-based real-time updates (Vercel-compatible)
-- Added deployment documentation
-- Environment variables template included
-- WebSocket conditionally disabled in production"
+    echo "Then run this script again or push manually:"
+    echo "git push -u origin main"
+    exit 1
 fi
 
 # Push to GitHub
-echo "⬆️  Pushing to GitHub..."
-git push -u origin main
+echo "📤 Pushing to GitHub..."
+git push origin main
 
 echo ""
-echo "✅ Code pushed to GitHub successfully!"
+echo "✅ Repository pushed to GitHub successfully!"
 echo ""
-echo "🔧 Next Steps:"
-echo "=============="
-echo "1. Go to https://vercel.com and sign in"
-echo "2. Click 'Import Project' and connect your GitHub account"
-echo "3. Select your repository"
-echo "4. Configure these settings:"
-echo "   - Framework Preset: Other"
-echo "   - Build Command: npm install"
-echo "   - Output Directory: ./"
+echo "🌐 Next Steps for Railway Deployment:"
+echo "===================================="
 echo ""
-echo "5. Add Environment Variables (see env.example for full list):"
-echo "   Required variables:"
-echo "   - NODE_ENV=production"
-echo "   - REDIS_URL=your-redis-url"
-echo "   - VAPI_API_KEY=your-vapi-key"
-echo "   - TWILIO_ACCOUNT_SID=your-twilio-sid"
-echo "   - TWILIO_AUTH_TOKEN=your-twilio-token"
-echo "   - And others from env.example"
+echo "1. Go to https://railway.app and sign in"
+echo "2. Click 'New Project' → 'Deploy from GitHub repo'"
+echo "3. Select your repository: $(git remote get-url origin)"
+echo "4. Add Redis database:"
+echo "   - Click 'Add Service' → 'Database' → 'Redis'"
 echo ""
-echo "6. After deployment, update these variables with your Vercel URL:"
-echo "   - SERVER_BASE_URL=https://your-app.vercel.app"
-echo "   - WEBHOOK_URL=https://your-app.vercel.app/webhook"
+echo "5. Configure Environment Variables in Railway dashboard:"
+echo "   NODE_ENV=production"
+echo "   WEBHOOK_URL=https://your-app-name.railway.app/webhook"
+echo "   VAPI_API_KEY=your_vapi_api_key_here"
+echo "   VAPI_ASSISTANT_ID=your_vapi_assistant_id_here"
+echo "   TWILIO_ACCOUNT_SID=your_twilio_account_sid_here"
+echo "   TWILIO_AUTH_TOKEN=your_twilio_auth_token_here"
+echo "   TWILIO_PHONE_NUMBER=your_twilio_phone_number_here"
 echo ""
-echo "7. Set up Redis database:"
-echo "   - Option A: Vercel KV (recommended)"
-echo "   - Option B: Upstash Redis (free tier)"
-echo "   - Option C: Redis Cloud"
+echo "6. Once deployed, update WEBHOOK_URL with your actual Railway domain"
 echo ""
-echo "📚 For detailed instructions, see DEPLOYMENT.md"
-echo ""
-echo "🎯 Your app will be available at: https://your-app-name.vercel.app" 
+echo "📖 For detailed instructions, see README.md" 

@@ -2,26 +2,8 @@ const crypto = require('crypto');
 const callMonitor = require('../services/callMonitor');
 const campaignController = require('./campaignController');
 const { broadcastToClients } = require('../websocket');
-const { sendRealtimeUpdate } = require('../routes/sse');
 const logger = require('../utils/logger');
 const vapiConfig = require('../config/vapi.config');
-
-// Universal broadcast function that works with both WebSocket and SSE
-function universalBroadcast(data) {
-    // Try WebSocket first (for development)
-    try {
-        broadcastToClients(data);
-    } catch (error) {
-        logger.debug('WebSocket broadcast failed (normal in production):', error.message);
-    }
-    
-    // Always send SSE update
-    try {
-        sendRealtimeUpdate(data.type, data);
-    } catch (error) {
-        logger.error('SSE broadcast failed:', error);
-    }
-}
 
 // Validate webhook signature
 function validateWebhookSignature(req) {
@@ -237,7 +219,7 @@ function handleTranscriptEvent(webhookData) {
         });
         
         // Broadcast that call is answered
-        universalBroadcast({
+        broadcastToClients({
             type: 'call_answered',
             call: {
                 ...call,
@@ -318,8 +300,8 @@ function handleCallStarted(call) {
         startedAt: new Date().toISOString()
     });
     
-    // Broadcast to WebSocket and SSE clients
-    universalBroadcast({
+    // Broadcast to WebSocket clients
+    broadcastToClients({
         type: 'call_started',
         call
     });
@@ -418,7 +400,7 @@ function handleCallEnded(call) {
         logger.info(`Starting cleanup for call ${call.id}`);
         
         // Now broadcast the ended event to close audio streams
-        universalBroadcast({
+        broadcastToClients({
             type: 'call_ended',
             call: {
                 ...call,
