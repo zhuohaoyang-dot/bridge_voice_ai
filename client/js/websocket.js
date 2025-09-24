@@ -8,8 +8,20 @@ const initialConnectDelay = 2000;
 
 // Initialize WebSocket connection
 function initializeWebSocket() {
-    const wsUrl = `ws://localhost:8010`;
+    // Dynamic WebSocket URL based on environment
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
     
+    let wsUrl;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        // Development: use separate port
+        wsUrl = `${protocol}//${host}:8010`;
+    } else {
+        // Production: use same port as HTTP server
+        wsUrl = `${protocol}//${host}${window.location.port ? ':' + window.location.port : ''}`;
+    }
+    
+    console.log('Connecting to WebSocket:', wsUrl);
     updateConnectionStatus('connecting');
     
     try {

@@ -233,8 +233,12 @@ server.listen(PORT, async () => {
   
   // Initialize WebSocket with a small delay to ensure HTTP server is ready
   setTimeout(() => {
-    initializeWebSocketServer();
-    logger.info(`📡 WebSocket server running on port 8010`);
+    initializeWebSocketServer(server);
+    if (process.env.NODE_ENV === 'production') {
+      logger.info(`📡 WebSocket server attached to HTTP server`);
+    } else {
+      logger.info(`📡 WebSocket server running on port 8010`);
+    }
   }, 1000);
   
   // Configure Vapi webhook after server starts

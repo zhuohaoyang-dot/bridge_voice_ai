@@ -5,13 +5,19 @@ const callMonitor = require('./services/callMonitor');
 let wss = null;
 const clients = new Map();
 
-function initializeWebSocketServer() {
+function initializeWebSocketServer(server) {
     // Main WebSocket server for real-time updates
-    wss = new WebSocket.Server({ 
-        port: process.env.WS_PORT || 8010
-    });
-    
-    logger.info(`WebSocket server listening on port ${process.env.WS_PORT || 8010}`);
+    // In production (Railway), use the same server as HTTP
+    // In development, use separate port
+    if (process.env.NODE_ENV === 'production' && server) {
+        wss = new WebSocket.Server({ server });
+        logger.info('WebSocket server attached to HTTP server (production mode)');
+    } else {
+        wss = new WebSocket.Server({ 
+            port: process.env.WS_PORT || 8010
+        });
+        logger.info(`WebSocket server listening on separate port ${process.env.WS_PORT || 8010} (development mode)`);
+    }
     
     // Handle main WebSocket connections
     wss.on('connection', (ws, req) => {
