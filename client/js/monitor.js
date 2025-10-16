@@ -872,15 +872,38 @@ function updateDebugButtonVisibility(card, status) {
     const debugBtn = card.querySelector('.control-btn.debug');
     if (!debugBtn) return;
     
-    // Show debug button in development (localhost) and for non-answered calls
+    // Show debug button in development AND production environments (including Railway)
+    // This allows debugging in deployed environments when needed
     const isDevelopment = window.location.hostname === 'localhost' || 
                          window.location.hostname === '127.0.0.1' || 
                          window.location.hostname.includes('dev');
     
+    const isRailwayOrProduction = window.location.hostname.includes('railway.app') || 
+                                 window.location.hostname.includes('up.railway.app') ||
+                                 window.location.protocol === 'https:';
+    
     const answeredStatuses = ['in-progress', 'answered', 'active', 'connected', 'conversation-started'];
     const isNotAnswered = !answeredStatuses.includes(status);
     
-    if (isDevelopment && isNotAnswered) {
+    // Show button if: (development OR production/railway) AND call not answered
+    // Also show if URL has debug parameter for emergency access
+    const hasDebugParam = window.location.search.includes('debug=true');
+    
+    const shouldShow = (isDevelopment || isRailwayOrProduction || hasDebugParam) && isNotAnswered;
+    
+    // Debug logging to help troubleshoot visibility issues
+    console.log(`Debug button visibility check:`, {
+        hostname: window.location.hostname,
+        protocol: window.location.protocol,
+        isDevelopment,
+        isRailwayOrProduction,
+        hasDebugParam,
+        status,
+        isNotAnswered,
+        shouldShow
+    });
+    
+    if (shouldShow) {
         debugBtn.style.display = 'flex';
         debugBtn.style.background = '#fef3c7';
         debugBtn.style.color = '#92400e';
